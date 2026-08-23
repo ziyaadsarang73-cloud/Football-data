@@ -16,8 +16,8 @@
         <span class="text-2xl">⚽</span>
         <h1 class="text-xl font-bold text-white">Footy Sharer</h1>
       </div>
-      <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-        Live API Connected
+      <span id="statusBadge" class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+        Live Connected
       </span>
     </div>
 
@@ -26,7 +26,7 @@
       <div>
         <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Competition</label>
         <select id="leagueSelect" onchange="fetchData()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none">
-          <option value="PL">Premier League</option>
+          <option value="PL" selected>Premier League</option>
           <option value="CL">UEFA Champions League</option>
         </select>
       </div>
@@ -50,7 +50,7 @@
         <span id="loadingIndicator" class="hidden text-xs text-emerald-400 animate-pulse">Fetching live data...</span>
       </div>
 
-      <textarea id="whatsappOutput" readonly rows="13" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Loading data..."></textarea>
+      <textarea id="whatsappOutput" readonly rows="13" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Loading live data..."></textarea>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
         <button onclick="copyToClipboard()" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition text-sm">
@@ -65,8 +65,8 @@
   </div>
 
   <script>
-    // Embedded Football-Data.org API Key
     const API_KEY = "4a7648b127cb477c9617b8e5f1536bd2";
+    const CORS_PROXY = "https://corsproxy.io/?";
 
     let globalMatches = [];
     let globalStandings = [];
@@ -78,28 +78,45 @@
     async function fetchData() {
       const league = document.getElementById('leagueSelect').value;
       const loading = document.getElementById('loadingIndicator');
+      const badge = document.getElementById('statusBadge');
       const textarea = document.getElementById('whatsappOutput');
 
       loading.classList.remove('hidden');
+      badge.textContent = "Fetching...";
+      badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30";
 
       try {
-        // Fetch Matches
-        const matchRes = await fetch(`https://api.football-data.org/v4/competitions/${league}/matches?status=FINISHED`, {
+        // Fetch Matches through CORS Proxy
+        const matchUrl = `${CORS_PROXY}${encodeURIComponent(`https://api.football-data.org/v4/competitions/${league}/matches?status=FINISHED`)}`;
+        const matchRes = await fetch(matchUrl, {
           headers: { 'X-Auth-Token': API_KEY }
         });
-        const matchData = await matchRes.json();
-        globalMatches = (matchData.matches || []).slice(-5); // Get latest 5 finished matches
 
-        // Fetch Standings
-        const standingsRes = await fetch(`https://api.football-data.org/v4/competitions/${league}/standings`, {
+        if (!matchRes.ok) throw new Error(`HTTP Error: ${matchRes.status}`);
+
+        const matchData = await matchRes.json();
+        globalMatches = (matchData.matches || []).slice(-5);
+
+        // Fetch Standings through CORS Proxy
+        const standingsUrl = `${CORS_PROXY}${encodeURIComponent(`https://api.football-data.org/v4/competitions/${league}/standings`)}`;
+        const standingsRes = await fetch(standingsUrl, {
           headers: { 'X-Auth-Token': API_KEY }
         });
+
+        if (!standingsRes.ok) throw new Error(`HTTP Error: ${standingsRes.status}`);
+
         const standingsData = await standingsRes.json();
         globalStandings = standingsData.standings?.[0]?.table || [];
 
+        badge.textContent = "Live Connected";
+        badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+
         updatePreview();
+
       } catch (err) {
-        textarea.value = "⚠️ Error fetching data. Please check connection.";
+        textarea.value = `⚠️ Data Fetch Error:\n${err.message}\n\nUnable to reach Football-Data API through the proxy. Please check back shortly.`;
+        badge.textContent = "Fetch Failed";
+        badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/30";
         console.error(err);
       } finally {
         loading.classList.add('hidden');
