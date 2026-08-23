@@ -16,8 +16,8 @@
         <span class="text-2xl">⚽</span>
         <h1 class="text-xl font-bold text-white">Footy Sharer</h1>
       </div>
-      <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-        Live API Connected
+      <span id="statusBadge" class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-700 text-slate-300">
+        Ready
       </span>
     </div>
 
@@ -29,7 +29,7 @@
         <div>
           <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Competition</label>
           <select id="leagueSelect" onchange="fetchData()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none">
-            <option value="39">Premier League</option>
+            <option value="39" selected>Premier League</option>
             <option value="2">UEFA Champions League</option>
           </select>
         </div>
@@ -38,9 +38,9 @@
         <div>
           <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Season</label>
           <select id="seasonSelect" onchange="fetchData()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none">
-            <option value="2026" selected>2026/2027</option>
-            <option value="2025">2025/2026</option>
+            <option value="2025" selected>2025/2026</option>
             <option value="2024">2024/2025</option>
+            <option value="2026">2026/2027</option>
           </select>
         </div>
 
@@ -50,7 +50,7 @@
       <div class="flex flex-wrap items-center gap-6 pt-2 border-t border-slate-700/50">
         <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
           <input type="checkbox" id="includeResults" checked onchange="updatePreview()" class="accent-emerald-500 w-4 h-4 rounded">
-          Include Match Results & Scorers
+          Include Match Results
         </label>
         <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
           <input type="checkbox" id="includeTable" checked onchange="updatePreview()" class="accent-emerald-500 w-4 h-4 rounded">
@@ -66,7 +66,7 @@
         <span id="loadingIndicator" class="hidden text-xs text-emerald-400 animate-pulse">Fetching live data...</span>
       </div>
 
-      <textarea id="whatsappOutput" readonly rows="13" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Loading data..."></textarea>
+      <textarea id="whatsappOutput" readonly rows="13" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Click Fetch to load data..."></textarea>
 
       <!-- Action Buttons -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
@@ -82,7 +82,6 @@
   </div>
 
   <script>
-    // Embedded API-Football Key
     const API_KEY = "2ebf1e836cad811f8a03c345bbb9bd22";
 
     let globalFixtures = [];
@@ -96,27 +95,25 @@
       const leagueId = document.getElementById('leagueSelect').value;
       const season = document.getElementById('seasonSelect').value;
       const loading = document.getElementById('loadingIndicator');
+      const badge = document.getElementById('statusBadge');
+      const textarea = document.getElementById('whatsappOutput');
 
       loading.classList.remove('hidden');
+      badge.textContent = "Connecting...";
+      badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30";
 
       try {
-        // Fetch Last 10 Finished Matches
-        const fixturesRes = await fetch(`https://v3.football.api-sports.io/fixtures?league=${leagueId}&season=${season}&last=10`, {
+        // Fetch Last 5 Finished Matches
+        const fixturesRes = await fetch(`https://v3.football.api-sports.io/fixtures?league=${leagueId}&season=${season}&last=5`, {
           headers: { 'x-apisports-key': API_KEY }
         });
         const fixturesData = await fixturesRes.json();
-        globalFixtures = fixturesData.response || [];
 
-        // Fetch Detailed Goal Events (Goalscorers)
-        for (let fix of globalFixtures) {
-          if (fix.fixture.id) {
-            const eventRes = await fetch(`https://v3.football.api-sports.io/fixtures/events?fixture=${fix.fixture.id}&type=Goal`, {
-              headers: { 'x-apisports-key': API_KEY }
-            });
-            const eventData = await eventRes.json();
-            fix.goalsEvents = eventData.response || [];
-          }
+        if (fixturesData.errors && Object.keys(fixturesData.errors).length > 0) {
+          throw new Error(JSON.stringify(fixturesData.errors));
         }
+
+        globalFixtures = fixturesData.response || [];
 
         // Fetch League Standings
         const standingsRes = await fetch(`https://v3.football.api-sports.io/standings?league=${leagueId}&season=${season}`, {
@@ -125,10 +122,20 @@
         const standingsData = await standingsRes.json();
         globalStandings = standingsData.response?.[0]?.league?.standings || [];
 
-        updatePreview();
+        if (globalFixtures.length === 0 && globalStandings.length === 0) {
+          textarea.value = `⚠️ No data found for Season ${season}.\n\nTry selecting Season 2025/2026 from the dropdown menu above.`;
+          badge.textContent = "No Data";
+          badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/30";
+        } else {
+          badge.textContent = "Live Connected";
+          badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+          updatePreview();
+        }
 
       } catch (err) {
-        alert("Error fetching live data. Please check network connection.");
+        textarea.value = `⚠️ API Fetch Error:\n${err.message}\n\nPlease verify subscription status or try switching the season.`;
+        badge.textContent = "API Error";
+        badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/30";
         console.error(err);
       } finally {
         loading.classList.add('hidden');
@@ -142,7 +149,7 @@
 
       let output = `⚽ *${leagueName.toUpperCase()} UPDATE* ⚽\n\n`;
 
-      // 1. Format Fixtures & Scorers
+      // 1. Format Fixtures
       if (includeResults && globalFixtures.length > 0) {
         output += `📊 *RECENT RESULTS*\n`;
         
@@ -153,29 +160,6 @@
           const awayGoals = fix.goals.away ?? 0;
 
           output += `\n*${home}* ${homeGoals} - ${awayGoals} *${away}*\n`;
-
-          // Format Goalscorers
-          if (fix.goalsEvents && fix.goalsEvents.length > 0) {
-            const homeScorers = [];
-            const awayScorers = [];
-
-            fix.goalsEvents.forEach(e => {
-              const minute = e.time.elapsed + (e.time.extra ? `+${e.time.extra}` : '');
-              const detail = e.detail === 'Penalty' ? ' (P)' : e.detail === 'Own Goal' ? ' (OG)' : '';
-              const scorer = `${e.player.name} ${minute}'${detail}`;
-
-              if (e.team.id === fix.teams.home.id) {
-                homeScorers.push(scorer);
-              } else {
-                awayScorers.push(scorer);
-              }
-            });
-
-            const homeText = homeScorers.length > 0 ? homeScorers.join(', ') : '-';
-            const awayText = awayScorers.length > 0 ? awayScorers.join(', ') : '-';
-
-            output += `⚽ _${homeText} | ${awayText}_\n`;
-          }
         });
 
         output += `\n------------------------------------\n`;
