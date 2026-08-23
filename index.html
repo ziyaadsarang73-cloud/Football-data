@@ -16,37 +16,21 @@
         <span class="text-2xl">⚽</span>
         <h1 class="text-xl font-bold text-white">Footy Sharer</h1>
       </div>
-      <span id="statusBadge" class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-700 text-slate-300">
-        Ready
+      <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+        Live API Connected
       </span>
     </div>
 
-    <!-- Controls & Selection -->
+    <!-- Controls -->
     <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        
-        <!-- League Selector -->
-        <div>
-          <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Competition</label>
-          <select id="leagueSelect" onchange="fetchData()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none">
-            <option value="39" selected>Premier League</option>
-            <option value="2">UEFA Champions League</option>
-          </select>
-        </div>
-
-        <!-- Season Selector -->
-        <div>
-          <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Season</label>
-          <select id="seasonSelect" onchange="fetchData()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none">
-            <option value="2025" selected>2025/2026</option>
-            <option value="2024">2024/2025</option>
-            <option value="2026">2026/2027</option>
-          </select>
-        </div>
-
+      <div>
+        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Competition</label>
+        <select id="leagueSelect" onchange="fetchData()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-emerald-500 outline-none">
+          <option value="PL">Premier League</option>
+          <option value="CL">UEFA Champions League</option>
+        </select>
       </div>
 
-      <!-- Content Include Options -->
       <div class="flex flex-wrap items-center gap-6 pt-2 border-t border-slate-700/50">
         <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
           <input type="checkbox" id="includeResults" checked onchange="updatePreview()" class="accent-emerald-500 w-4 h-4 rounded">
@@ -59,16 +43,15 @@
       </div>
     </div>
 
-    <!-- Live Preview Box -->
+    <!-- Output Preview -->
     <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold uppercase text-slate-400">WhatsApp Text Preview</h2>
         <span id="loadingIndicator" class="hidden text-xs text-emerald-400 animate-pulse">Fetching live data...</span>
       </div>
 
-      <textarea id="whatsappOutput" readonly rows="13" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Click Fetch to load data..."></textarea>
+      <textarea id="whatsappOutput" readonly rows="13" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Loading data..."></textarea>
 
-      <!-- Action Buttons -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
         <button onclick="copyToClipboard()" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition text-sm">
           📋 Copy Text
@@ -82,9 +65,10 @@
   </div>
 
   <script>
-    const API_KEY = "2ebf1e836cad811f8a03c345bbb9bd22";
+    // Embedded Football-Data.org API Key
+    const API_KEY = "4a7648b127cb477c9617b8e5f1536bd2";
 
-    let globalFixtures = [];
+    let globalMatches = [];
     let globalStandings = [];
 
     window.onload = () => {
@@ -92,50 +76,30 @@
     };
 
     async function fetchData() {
-      const leagueId = document.getElementById('leagueSelect').value;
-      const season = document.getElementById('seasonSelect').value;
+      const league = document.getElementById('leagueSelect').value;
       const loading = document.getElementById('loadingIndicator');
-      const badge = document.getElementById('statusBadge');
       const textarea = document.getElementById('whatsappOutput');
 
       loading.classList.remove('hidden');
-      badge.textContent = "Connecting...";
-      badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30";
 
       try {
-        // Fetch Last 5 Finished Matches
-        const fixturesRes = await fetch(`https://v3.football.api-sports.io/fixtures?league=${leagueId}&season=${season}&last=5`, {
-          headers: { 'x-apisports-key': API_KEY }
+        // Fetch Matches
+        const matchRes = await fetch(`https://api.football-data.org/v4/competitions/${league}/matches?status=FINISHED`, {
+          headers: { 'X-Auth-Token': API_KEY }
         });
-        const fixturesData = await fixturesRes.json();
+        const matchData = await matchRes.json();
+        globalMatches = (matchData.matches || []).slice(-5); // Get latest 5 finished matches
 
-        if (fixturesData.errors && Object.keys(fixturesData.errors).length > 0) {
-          throw new Error(JSON.stringify(fixturesData.errors));
-        }
-
-        globalFixtures = fixturesData.response || [];
-
-        // Fetch League Standings
-        const standingsRes = await fetch(`https://v3.football.api-sports.io/standings?league=${leagueId}&season=${season}`, {
-          headers: { 'x-apisports-key': API_KEY }
+        // Fetch Standings
+        const standingsRes = await fetch(`https://api.football-data.org/v4/competitions/${league}/standings`, {
+          headers: { 'X-Auth-Token': API_KEY }
         });
         const standingsData = await standingsRes.json();
-        globalStandings = standingsData.response?.[0]?.league?.standings || [];
+        globalStandings = standingsData.standings?.[0]?.table || [];
 
-        if (globalFixtures.length === 0 && globalStandings.length === 0) {
-          textarea.value = `⚠️ No data found for Season ${season}.\n\nTry selecting Season 2025/2026 from the dropdown menu above.`;
-          badge.textContent = "No Data";
-          badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/30";
-        } else {
-          badge.textContent = "Live Connected";
-          badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
-          updatePreview();
-        }
-
+        updatePreview();
       } catch (err) {
-        textarea.value = `⚠️ API Fetch Error:\n${err.message}\n\nPlease verify subscription status or try switching the season.`;
-        badge.textContent = "API Error";
-        badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/30";
+        textarea.value = "⚠️ Error fetching data. Please check connection.";
         console.error(err);
       } finally {
         loading.classList.add('hidden');
@@ -149,33 +113,26 @@
 
       let output = `⚽ *${leagueName.toUpperCase()} UPDATE* ⚽\n\n`;
 
-      // 1. Format Fixtures
-      if (includeResults && globalFixtures.length > 0) {
+      if (includeResults && globalMatches.length > 0) {
         output += `📊 *RECENT RESULTS*\n`;
-        
-        globalFixtures.forEach(fix => {
-          const home = fix.teams.home.name;
-          const away = fix.teams.away.name;
-          const homeGoals = fix.goals.home ?? 0;
-          const awayGoals = fix.goals.away ?? 0;
+        globalMatches.forEach(m => {
+          const home = m.homeTeam.shortName || m.homeTeam.name;
+          const away = m.awayTeam.shortName || m.awayTeam.name;
+          const homeGoals = m.score.fullTime.home ?? 0;
+          const awayGoals = m.score.fullTime.away ?? 0;
 
           output += `\n*${home}* ${homeGoals} - ${awayGoals} *${away}*\n`;
         });
-
         output += `\n------------------------------------\n`;
       }
 
-      // 2. Format Standings
       if (includeTable && globalStandings.length > 0) {
         output += `🏆 *STANDINGS*\n\n`;
-
-        const tableGroup = Array.isArray(globalStandings[0]) ? globalStandings[0] : globalStandings;
-
-        tableGroup.slice(0, 10).forEach(row => {
-          const pos = row.rank;
-          const team = row.team.name;
+        globalStandings.slice(0, 10).forEach(row => {
+          const pos = row.position;
+          const team = row.team.shortName || row.team.name;
           const pts = row.points;
-          const gd = row.goalsDiff > 0 ? `+${row.goalsDiff}` : row.goalsDiff;
+          const gd = row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference;
 
           output += `${pos}. *${team}* — ${pts}pts (${gd})\n`;
         });
@@ -188,14 +145,13 @@
       const textarea = document.getElementById('whatsappOutput');
       textarea.select();
       navigator.clipboard.writeText(textarea.value);
-      alert("Text copied to clipboard!");
+      alert("Text copied!");
     }
 
     function shareToWhatsApp() {
       const text = document.getElementById('whatsappOutput').value;
       if (!text) return;
-      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-      window.open(url, '_blank');
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     }
   </script>
 </body>
