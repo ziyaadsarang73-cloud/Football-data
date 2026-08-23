@@ -14,7 +14,7 @@
     <div class="flex items-center justify-between bg-slate-800 p-4 rounded-xl border border-slate-700">
       <div class="flex items-center gap-2">
         <span class="text-2xl">⚽</span>
-        <h1 class="text-xl font-bold text-white">Footy Sharer</h1>
+        <h1 class="text-xl font-bold text-white">Footy Sharer Pro</h1>
       </div>
       <span id="statusBadge" class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
         Live Connected
@@ -34,7 +34,7 @@
       <div class="flex flex-wrap items-center gap-6 pt-2 border-t border-slate-700/50">
         <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
           <input type="checkbox" id="includeResults" checked onchange="updatePreview()" class="accent-emerald-500 w-4 h-4 rounded">
-          Include Match Results
+          Include Match Results & Goals
         </label>
         <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
           <input type="checkbox" id="includeTable" checked onchange="updatePreview()" class="accent-emerald-500 w-4 h-4 rounded">
@@ -43,14 +43,24 @@
       </div>
     </div>
 
-    <!-- Output Preview -->
+    <!-- Live Matches Visual Cards (Web UI) -->
     <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
       <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase text-slate-400">WhatsApp Text Preview</h2>
-        <span id="loadingIndicator" class="hidden text-xs text-emerald-400 animate-pulse">Fetching live data...</span>
+        <h2 class="text-sm font-semibold uppercase text-slate-400">Match Overview</h2>
+        <span id="loadingIndicator" class="hidden text-xs text-emerald-400 animate-pulse">Loading live scores & goals...</span>
       </div>
 
-      <textarea id="whatsappOutput" readonly rows="13" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Loading live data..."></textarea>
+      <div id="visualMatchesContainer" class="grid grid-cols-1 gap-3">
+        <!-- Match Cards dynamically inserted here -->
+        <p class="text-xs text-slate-500 italic">Fetching fixtures...</p>
+      </div>
+    </div>
+
+    <!-- WhatsApp Output Text Preview -->
+    <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
+      <h2 class="text-sm font-semibold uppercase text-slate-400">WhatsApp Export Preview</h2>
+
+      <textarea id="whatsappOutput" readonly rows="12" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-4 font-mono text-sm text-slate-200 outline-none resize-none focus:border-emerald-500" placeholder="Generating text..."></textarea>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
         <button onclick="copyToClipboard()" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition text-sm">
@@ -86,22 +96,33 @@
       badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30";
 
       try {
-        // Fetch Matches through CORS Proxy
+        // Fetch Matches
         const matchUrl = `${CORS_PROXY}${encodeURIComponent(`https://api.football-data.org/v4/competitions/${league}/matches?status=FINISHED`)}`;
-        const matchRes = await fetch(matchUrl, {
-          headers: { 'X-Auth-Token': API_KEY }
-        });
+        const matchRes = await fetch(matchUrl, { headers: { 'X-Auth-Token': API_KEY } });
 
         if (!matchRes.ok) throw new Error(`HTTP Error: ${matchRes.status}`);
 
         const matchData = await matchRes.json();
-        globalMatches = (matchData.matches || []).slice(-5);
+        const rawMatches = (matchData.matches || []).slice(-5); // Get last 5 finished matches
 
-        // Fetch Standings through CORS Proxy
+        // Fetch Individual Match Details to Extract Goalscorers
+        globalMatches = await Promise.all(rawMatches.map(async (m) => {
+          try {
+            const detailUrl = `${CORS_PROXY}${encodeURIComponent(`https://api.football-data.org/v4/matches/${m.id}`)}`;
+            const detailRes = await fetch(detailUrl, { headers: { 'X-Auth-Token': API_KEY } });
+            if (detailRes.ok) {
+              const detailData = await detailRes.json();
+              m.goalsData = detailData.goals || [];
+            }
+          } catch (e) {
+            m.goalsData = [];
+          }
+          return m;
+        }));
+
+        // Fetch Standings
         const standingsUrl = `${CORS_PROXY}${encodeURIComponent(`https://api.football-data.org/v4/competitions/${league}/standings`)}`;
-        const standingsRes = await fetch(standingsUrl, {
-          headers: { 'X-Auth-Token': API_KEY }
-        });
+        const standingsRes = await fetch(standingsUrl, { headers: { 'X-Auth-Token': API_KEY } });
 
         if (!standingsRes.ok) throw new Error(`HTTP Error: ${standingsRes.status}`);
 
@@ -111,16 +132,75 @@
         badge.textContent = "Live Connected";
         badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
 
+        renderVisualMatches();
         updatePreview();
 
       } catch (err) {
-        textarea.value = `⚠️ Data Fetch Error:\n${err.message}\n\nUnable to reach Football-Data API through the proxy. Please check back shortly.`;
+        textarea.value = `⚠️ Data Fetch Error:\n${err.message}\n\nUnable to reach Football-Data API through proxy.`;
         badge.textContent = "Fetch Failed";
         badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/30";
         console.error(err);
       } finally {
         loading.classList.add('hidden');
       }
+    }
+
+    function renderVisualMatches() {
+      const container = document.getElementById('visualMatchesContainer');
+      container.innerHTML = '';
+
+      if (globalMatches.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-500 italic">No recent match results available.</p>`;
+        return;
+      }
+
+      globalMatches.forEach(m => {
+        const homeName = m.homeTeam.shortName || m.homeTeam.name;
+        const awayName = m.awayTeam.shortName || m.awayTeam.name;
+        const homeCrest = m.homeTeam.crest;
+        const awayCrest = m.awayTeam.crest;
+        const homeScore = m.score.fullTime.home ?? 0;
+        const awayScore = m.score.fullTime.away ?? 0;
+
+        // Extract Scorers
+        const homeScorers = [];
+        const awayScorers = [];
+
+        (m.goalsData || []).forEach(g => {
+          const scorerName = g.scorer?.name || 'Goal';
+          const minute = g.minute ? `${g.minute}'` : '';
+          const type = g.type === 'PENALTY' ? ' (P)' : g.type === 'OWN' ? ' (OG)' : '';
+          const str = `${scorerName} ${minute}${type}`.trim();
+
+          if (g.team?.id === m.homeTeam.id) homeScorers.push(str);
+          else awayScorers.push(str);
+        });
+
+        const cardHtml = `
+          <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-lg space-y-2">
+            <div class="flex items-center justify-between text-sm font-semibold">
+              <div class="flex items-center gap-2.5 w-5/12">
+                <img src="${homeCrest}" alt="${homeName}" class="w-6 h-6 object-contain" onError="this.style.display='none'">
+                <span class="truncate">${homeName}</span>
+              </div>
+              <div class="px-3 py-1 bg-slate-800 rounded font-mono text-emerald-400 font-bold">
+                ${homeScore} - ${awayScore}
+              </div>
+              <div class="flex items-center gap-2.5 w-5/12 justify-end">
+                <span class="truncate text-right">${awayName}</span>
+                <img src="${awayCrest}" alt="${awayName}" class="w-6 h-6 object-contain" onError="this.style.display='none'">
+              </div>
+            </div>
+            ${(homeScorers.length > 0 || awayScorers.length > 0) ? `
+              <div class="text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/80 flex justify-between gap-2">
+                <span class="truncate text-left w-1/2">⚽ ${homeScorers.join(', ') || '-'}</span>
+                <span class="truncate text-right w-1/2">⚽ ${awayScorers.join(', ') || '-'}</span>
+              </div>
+            ` : ''}
+          </div>
+        `;
+        container.innerHTML += cardHtml;
+      });
     }
 
     function updatePreview() {
@@ -139,6 +219,26 @@
           const awayGoals = m.score.fullTime.away ?? 0;
 
           output += `\n*${home}* ${homeGoals} - ${awayGoals} *${away}*\n`;
+
+          // Format Goalscorers for WhatsApp
+          const homeScorers = [];
+          const awayScorers = [];
+
+          (m.goalsData || []).forEach(g => {
+            const scorerName = g.scorer?.name || 'Goal';
+            const minute = g.minute ? `${g.minute}'` : '';
+            const type = g.type === 'PENALTY' ? ' (P)' : g.type === 'OWN' ? ' (OG)' : '';
+            const str = `${scorerName} ${minute}${type}`.trim();
+
+            if (g.team?.id === m.homeTeam.id) homeScorers.push(str);
+            else awayScorers.push(str);
+          });
+
+          if (homeScorers.length > 0 || awayScorers.length > 0) {
+            const homeStr = homeScorers.length > 0 ? homeScorers.join(', ') : '-';
+            const awayStr = awayScorers.length > 0 ? awayScorers.join(', ') : '-';
+            output += `⚽ _${homeStr} | ${awayStr}_\n`;
+          }
         });
         output += `\n------------------------------------\n`;
       }
